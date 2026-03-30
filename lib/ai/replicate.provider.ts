@@ -2,6 +2,13 @@ import Replicate from "replicate";
 
 import type { AIImageProvider } from "./provider.interface";
 
+const DEFAULT_REPLICATE_IMAGE_OPTIONS = {
+  aspect_ratio: "match_input_image",
+  output_format: "jpg",
+  safety_tolerance: 2,
+  prompt_upsampling: false,
+};
+
 const isValidUrlString = (value: string) =>
   value.startsWith("https://") ||
   value.startsWith("http://") ||
@@ -95,8 +102,7 @@ export class ReplicateProvider implements AIImageProvider {
           input: {
             prompt: input.prompt,
             input_image: normalizedImage,
-            aspect_ratio: "match_input_image",
-            output_format: "jpg",
+            ...DEFAULT_REPLICATE_IMAGE_OPTIONS,
           },
         },
       );

@@ -53,6 +53,13 @@ const MAX_LAYERS = 100;
 const MULTISELECTION_THRESHOLD = 5;
 const MAX_EXPORT_DIMENSION = 512;
 
+const getSelectionRect = (a: Point, b: Point) => ({
+  x: Math.min(a.x, b.x),
+  y: Math.min(a.y, b.y),
+  width: Math.abs(a.x - b.x),
+  height: Math.abs(a.y - b.y),
+});
+
 const escapeSvgText = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -306,6 +313,8 @@ export const Canvas = ({ boardId }: CanvasProps) => {
   const updateAiSelectionNet = useMutation(
     ({ storage, setMyPresence }, current: Point, origin: Point) => {
       const layers = storage.get("layers").toImmutable();
+      const selectionRect = getSelectionRect(origin, current);
+
       setCanvasState({
         mode: CanvasMode.AISelectionNet,
         origin,
@@ -320,8 +329,9 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       );
 
       setMyPresence({ selection: ids });
+      setSelectionBounds(selectionRect);
     },
-    [layerIds],
+    [layerIds, setSelectionBounds],
   );
 
   const startMultiSelection = useCallback((current: Point, origin: Point) => {
@@ -564,8 +574,8 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       } else if (canvasState.mode === CanvasMode.AISelectionNet) {
         setIsAiSelectionActive(false);
 
-        if (selectedLayerBounds) {
-          setSelectionBounds(selectedLayerBounds);
+        if (canvasState.origin && canvasState.current) {
+          setSelectionBounds(getSelectionRect(canvasState.origin, canvasState.current));
           setIsPromptOpen(true);
         }
 
@@ -788,7 +798,8 @@ export const Canvas = ({ boardId }: CanvasProps) => {
             />
           ))}
           <SelectionBox onResizeHandlePointerDown={onResizeHandlePointerDown} />
-          {canvasState.mode === CanvasMode.SelectionNet &&
+          {(canvasState.mode === CanvasMode.SelectionNet ||
+            canvasState.mode === CanvasMode.AISelectionNet) &&
             canvasState.current != null && (
               <rect
                 className="fill-blue-500/5 stroke-blue-500 stroke-1"
