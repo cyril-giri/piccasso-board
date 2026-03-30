@@ -1,5 +1,6 @@
 import {
   Circle,
+  ImagePlus,
   MousePointer2,
   Pencil,
   Redo2,
@@ -16,6 +17,7 @@ import { ToolButton } from "./tool-button";
 type ToolbarProps = {
   canvasState: CanvasState;
   setCanvasState: (newState: CanvasState) => void;
+  onAiSelection: () => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -25,6 +27,7 @@ type ToolbarProps = {
 export const Toolbar = ({
   canvasState,
   setCanvasState,
+  onAiSelection,
   undo,
   redo,
   canRedo,
@@ -43,6 +46,16 @@ export const Toolbar = ({
             canvasState.mode === CanvasMode.SelectionNet ||
             canvasState.mode === CanvasMode.Pressing ||
             canvasState.mode === CanvasMode.Resizing
+          }
+        />
+
+        <ToolButton
+          label="AI Generate"
+          icon={ImagePlus}
+          onClick={onAiSelection}
+          isActive={
+            canvasState.mode === CanvasMode.AISelectionPressing ||
+            canvasState.mode === CanvasMode.AISelectionNet
           }
         />
 

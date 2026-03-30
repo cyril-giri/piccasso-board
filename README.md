@@ -176,9 +176,44 @@ CLERK_DEFAULT_ORGANIZATION_ID=org_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NEXT_PUBLIC_LIVEBLOCKS_PUBLIC_KEY=pk_dev_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 LIVEBLOCKS_SECRET_KEY=sk_dev_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
+# replicate AI image generation
+REPLICATE_API_TOKEN=sk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+AI_IMAGE_PROVIDER=replicate
+
 ```
 
-### 5. Convex Deployment Configuration:
+### 5. Run locally and test AI image generation
+
+After you create or update `.env.local`, restart the Next.js server so the new environment variables are loaded.
+
+```bash
+npm install
+npm run dev
+```
+
+Then open `http://localhost:3000` and sign in to a board.
+
+How to use AI image generation:
+- Click the `AI Generate` button in the left toolbar.
+- Drag a selection rectangle around the drawn/sketched area you want to convert.
+- Enter a prompt describing the image style or scene.
+- Submit and wait for the generated image to appear inside the selected area.
+- The generated image can be moved, resized, and deleted like other board elements.
+
+If you change `.env.local`, stop the server and restart it with `npm run dev`.
+
+### 6. Replicate API key location
+
+Add the Replicate token to your root `.env.local` file using:
+
+```env
+REPLICATE_API_TOKEN=sk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+AI_IMAGE_PROVIDER=replicate
+```
+
+The API key is only used on the server side via `/api/generate-image` and is never exposed to the browser.
+
+### 7. Convex Deployment Configuration:
 
 #### a. Visit the Convex Website:
 

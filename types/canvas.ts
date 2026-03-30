@@ -15,6 +15,7 @@ export enum LayerType {
   Path,
   Text,
   Note,
+  Image,
 }
 
 export type RectangleLayer = {
@@ -68,6 +69,15 @@ export type NoteLayer = {
   value?: string;
 };
 
+export type ImageLayer = {
+  type: LayerType.Image;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  src: string;
+};
+
 export type Point = {
   x: number;
   y: number;
@@ -116,6 +126,15 @@ export type CanvasState =
       origin: Point;
     }
   | {
+      mode: CanvasMode.AISelectionPressing;
+      origin: Point;
+    }
+  | {
+      mode: CanvasMode.AISelectionNet;
+      origin: Point;
+      current?: Point;
+    }
+  | {
       mode: CanvasMode.Resizing;
       initialBounds: XYWH;
       corner: Side;
@@ -129,6 +148,8 @@ export enum CanvasMode {
   Inserting,
   Resizing,
   Pencil,
+  AISelectionPressing,
+  AISelectionNet,
 }
 
 export type Layer =
@@ -136,4 +157,5 @@ export type Layer =
   | EllipseLayer
   | PathLayer
   | TextLayer
-  | NoteLayer;
+  | NoteLayer
+  | ImageLayer;

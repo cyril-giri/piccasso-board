@@ -3,13 +3,17 @@
 import { LiveObject } from "@liveblocks/client";
 import { nanoid } from "nanoid";
 import React, { useCallback, useMemo, useState, useEffect } from "react";
+import getStroke from "perfect-freehand";
 
 import { useDisableScrollBounce } from "@/hooks/use-disable-scroll-bounce";
 import { useDeleteLayers } from "@/hooks/use-delete-layers";
+import { useSelectionBounds } from "@/hooks/use-selection-bounds";
+import { useSelectionState } from "@/store/selection-state";
 import {
   colorToCSS,
   connectionIdToColor,
   findIntersectingLayersWithRectangle,
+  getSvgPathFromStroke,
   penPointsToPathLayer,
   pointerEventToCanvasPoint,
   resizeBounds,
@@ -29,6 +33,7 @@ import {
   type CanvasState,
   type Color,
   LayerType,
+  type Layer,
   type Point,
   type Side,
   type XYWH,
@@ -41,10 +46,125 @@ import { Participants } from "./participants";
 import { Path } from "./path";
 import { SelectionBox } from "./selection-box";
 import { SelectionTools } from "./selection-tools";
+import { SelectionTool } from "@/components/canvas/selection-tool";
 import { Toolbar } from "./toolbar";
 
 const MAX_LAYERS = 100;
 const MULTISELECTION_THRESHOLD = 5;
+const MAX_EXPORT_DIMENSION = 512;
+
+const escapeSvgText = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
+const renderLayerToSvg = (layer: Layer, selectionBounds: XYWH) => {
+  const offsetX = layer.x - selectionBounds.x;
+  const offsetY = layer.y - selectionBounds.y;
+
+  switch (layer.type) {
+    case LayerType.Path: {
+      const path = getSvgPathFromStroke(
+        getStroke(layer.points, {
+          size: 16,
+          thinning: 0.5,
+          smoothing: 0.5,
+          streamline: 0.5,
+        }),
+      );
+
+      return `<path d="${path}" fill="${colorToCSS(layer.fill)}" transform="translate(${offsetX} ${offsetY})"/>`;
+    }
+    case LayerType.Rectangle:
+      return `<rect x="${offsetX}" y="${offsetY}" width="${layer.width}" height="${layer.height}" fill="${colorToCSS(
+        layer.fill,
+      )}"/>`;
+    case LayerType.Ellipse:
+      return `<ellipse cx="${layer.width / 2 + offsetX}" cy="${layer.height / 2 + offsetY}" rx="${layer.width / 2}" ry="${layer.height / 2}" fill="${colorToCSS(
+        layer.fill,
+      )}"/>`;
+    case LayerType.Text: {
+      const text = escapeSvgText(layer.value || "Text");
+      const fontSize = Math.min(24, layer.height * 0.2);
+      return `<text x="${offsetX + 8}" y="${offsetY + fontSize + 4}" fill="${colorToCSS(
+        layer.fill,
+      )}" font-family="sans-serif" font-size="${fontSize}px">${text}</text>`;
+    }
+    case LayerType.Note: {
+      const text = escapeSvgText(layer.value || "Text");
+      const fontSize = Math.min(24, layer.height * 0.15);
+      return `<rect x="${offsetX}" y="${offsetY}" width="${layer.width}" height="${layer.height}" fill="${colorToCSS(
+        layer.fill,
+      )}"/>` +
+        `<text x="${offsetX + 8}" y="${offsetY + fontSize + 8}" fill="${colorToCSS(
+          layer.fill,
+        )}" font-family="sans-serif" font-size="${fontSize}px">${text}</text>`;
+    }
+    case LayerType.Image:
+      return `<image x="${offsetX}" y="${offsetY}" width="${layer.width}" height="${layer.height}" href="${escapeSvgText(
+        layer.src,
+      )}" preserveAspectRatio="none"/>`;
+    default:
+      return "";
+  }
+};
+
+const buildSelectionSvg = (selectedLayers: Layer[], selectionBounds: XYWH) => {
+  const content = selectedLayers
+    .map((layer) => renderLayerToSvg(layer, selectionBounds))
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${selectionBounds.width}" height="${selectionBounds.height}" viewBox="0 0 ${selectionBounds.width} ${selectionBounds.height}">
+  <rect width="100%" height="100%" fill="transparent" />
+  ${content}
+</svg>`;
+};
+
+const exportSelectionToPng = async (
+  selectedLayers: Layer[],
+  selectionBounds: XYWH,
+) => {
+  if (!selectionBounds?.width || !selectionBounds?.height) return null;
+
+  const svg = buildSelectionSvg(selectedLayers, selectionBounds);
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(svgBlob);
+  const image = new Image();
+  image.src = url;
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("Failed to load selection image."));
+  });
+
+  const scale = Math.min(
+    1,
+    MAX_EXPORT_DIMENSION / selectionBounds.width,
+    MAX_EXPORT_DIMENSION / selectionBounds.height,
+  );
+
+  const width = Math.max(1, Math.round(selectionBounds.width * scale));
+  const height = Math.max(1, Math.round(selectionBounds.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    URL.revokeObjectURL(url);
+    throw new Error("Canvas is not supported in this environment.");
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+  URL.revokeObjectURL(url);
+
+  return canvas.toDataURL("image/png");
+};
 
 type CanvasProps = {
   boardId: string;
@@ -54,6 +174,7 @@ export const Canvas = ({ boardId }: CanvasProps) => {
   const layerIds = useStorage((root) => root.layerIds);
 
   const pencilDraft = useSelf((me) => me.presence.pencilDraft);
+  const selectedLayerIds = useSelf((me) => me.presence.selection);
   const [canvasState, setCanvasState] = useState<CanvasState>({
     mode: CanvasMode.None,
   });
@@ -63,6 +184,32 @@ export const Canvas = ({ boardId }: CanvasProps) => {
     g: 0,
     b: 0,
   });
+
+  const aiPrompt = useSelectionState((state) => state.aiPrompt);
+  const isAiSelectionActive = useSelectionState(
+    (state) => state.isAiSelectionActive,
+  );
+  const isPromptOpen = useSelectionState((state) => state.isPromptOpen);
+  const isGenerating = useSelectionState((state) => state.isGenerating);
+  const aiError = useSelectionState((state) => state.error);
+  const selectionBounds = useSelectionState((state) => state.selectionBounds);
+  const setAiPrompt = useSelectionState((state) => state.setAiPrompt);
+  const setSelectionBounds = useSelectionState(
+    (state) => state.setSelectionBounds,
+  );
+  const setIsAiSelectionActive = useSelectionState(
+    (state) => state.setIsAiSelectionActive,
+  );
+  const setIsPromptOpen = useSelectionState((state) => state.setIsPromptOpen);
+  const setIsGenerating = useSelectionState((state) => state.setIsGenerating);
+  const setError = useSelectionState((state) => state.setError);
+  const resetAiSelection = useSelectionState((state) => state.reset);
+  const selectedLayers = useStorage((root) =>
+    selectedLayerIds
+      .map((id) => root.layers.get(id))
+      .filter((layer): layer is Layer => Boolean(layer)),
+  );
+  const selectedLayerBounds = useSelectionBounds();
 
   useDisableScrollBounce();
   const history = useHistory();
@@ -156,6 +303,27 @@ export const Canvas = ({ boardId }: CanvasProps) => {
     [layerIds],
   );
 
+  const updateAiSelectionNet = useMutation(
+    ({ storage, setMyPresence }, current: Point, origin: Point) => {
+      const layers = storage.get("layers").toImmutable();
+      setCanvasState({
+        mode: CanvasMode.AISelectionNet,
+        origin,
+        current,
+      });
+
+      const ids = findIntersectingLayersWithRectangle(
+        layerIds,
+        layers,
+        origin,
+        current,
+      );
+
+      setMyPresence({ selection: ids });
+    },
+    [layerIds],
+  );
+
   const startMultiSelection = useCallback((current: Point, origin: Point) => {
     if (
       Math.abs(current.x - origin.x) + Math.abs(current.y - origin.y) >
@@ -168,6 +336,18 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       });
     }
   }, []);
+
+  const startAiSelection = useCallback(
+    (current: Point, origin: Point) => {
+      if (
+        Math.abs(current.x - origin.x) + Math.abs(current.y - origin.y) >
+        MULTISELECTION_THRESHOLD
+      ) {
+        updateAiSelectionNet(current, origin);
+      }
+    },
+    [updateAiSelectionNet],
+  );
 
   const continueDrawing = useMutation(
     ({ self, setMyPresence }, point: Point, e: React.PointerEvent) => {
@@ -220,6 +400,36 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       setCanvasState({ mode: CanvasMode.Pencil });
     },
     [lastUsedColor],
+  );
+
+  const insertImageLayer = useMutation(
+    (
+      { storage, setMyPresence },
+      src: string,
+      bounds: XYWH,
+    ) => {
+      const liveLayers = storage.get("layers");
+
+      if (liveLayers.size >= MAX_LAYERS) return;
+
+      const liveLayerIds = storage.get("layerIds");
+      const layerId = nanoid();
+      liveLayers.set(
+        layerId,
+        new LiveObject({
+          type: LayerType.Image,
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+          src,
+        }),
+      );
+
+      liveLayerIds.push(layerId);
+      setMyPresence({ selection: [layerId] }, { addToHistory: true });
+    },
+    [],
   );
 
   const startDrawing = useMutation(
@@ -280,6 +490,10 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         startMultiSelection(current, canvasState.origin);
       } else if (canvasState.mode === CanvasMode.SelectionNet) {
         updateSelectionNet(current, canvasState.origin);
+      } else if (canvasState.mode === CanvasMode.AISelectionPressing) {
+        startAiSelection(current, canvasState.origin);
+      } else if (canvasState.mode === CanvasMode.AISelectionNet) {
+        updateAiSelectionNet(current, canvasState.origin);
       } else if (canvasState.mode === CanvasMode.Translating) {
         translateSelectedLayers(current);
       } else if (canvasState.mode === CanvasMode.Resizing) {
@@ -318,9 +532,17 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         return;
       }
 
+      if (isAiSelectionActive) {
+        setCanvasState({
+          mode: CanvasMode.AISelectionPressing,
+          origin: point,
+        });
+        return;
+      }
+
       setCanvasState({ origin: point, mode: CanvasMode.Pressing });
     },
-    [camera, canvasState.mode, setCanvasState, startDrawing],
+    [camera, canvasState.mode, setCanvasState, startDrawing, isAiSelectionActive],
   );
 
   const onPointerUp = useMutation(
@@ -331,7 +553,22 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         canvasState.mode === CanvasMode.None ||
         canvasState.mode === CanvasMode.Pressing
       ) {
+        if (isAiSelectionActive) {
+          setIsAiSelectionActive(false);
+        }
+
         unselectLayers();
+        setCanvasState({
+          mode: CanvasMode.None,
+        });
+      } else if (canvasState.mode === CanvasMode.AISelectionNet) {
+        setIsAiSelectionActive(false);
+
+        if (selectedLayerBounds) {
+          setSelectionBounds(selectedLayerBounds);
+          setIsPromptOpen(true);
+        }
+
         setCanvasState({
           mode: CanvasMode.None,
         });
@@ -418,6 +655,77 @@ export const Canvas = ({ boardId }: CanvasProps) => {
     };
   }, [deleteLayers, history]);
 
+  const handleGenerateAiImage = useCallback(async () => {
+    const prompt = aiPrompt.trim();
+    const bounds = selectionBounds ?? selectedLayerBounds;
+
+    if (prompt.length === 0) {
+      setError("Please enter a prompt for your AI image.");
+      return;
+    }
+
+    if (!bounds || selectedLayers.length === 0) {
+      setError("Please select an area to generate from first.");
+      return;
+    }
+
+    setError(null);
+    setIsGenerating(true);
+
+    try {
+      const imageBase64 = await exportSelectionToPng(selectedLayers, bounds);
+
+      if (!imageBase64) {
+        throw new Error("Unable to export selected area.");
+      }
+
+      const response = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt,
+          imageBase64,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result?.error || "AI generation failed.");
+      }
+
+      if (!result.url) {
+        throw new Error("AI provider did not return an image URL.");
+      }
+
+      insertImageLayer(result.url, bounds);
+      resetAiSelection();
+      setIsPromptOpen(false);
+      setCanvasState({ mode: CanvasMode.None });
+    } catch (error: unknown) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to generate the AI image.",
+      );
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [
+    aiPrompt,
+    selectedLayerBounds,
+    selectionBounds,
+    selectedLayers,
+    insertImageLayer,
+    resetAiSelection,
+    setCanvasState,
+    setError,
+    setIsGenerating,
+    setIsPromptOpen,
+  ]);
+
   return (
     <main className="h-full w-full relative bg-neutral-100 touch-none">
       <Info boardId={boardId} />
@@ -425,12 +733,38 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       <Toolbar
         canvasState={canvasState}
         setCanvasState={setCanvasState}
+        onAiSelection={() => {
+          resetAiSelection();
+          setIsAiSelectionActive(true);
+          setIsPromptOpen(false);
+          setSelectionBounds(null);
+          setAiPrompt("");
+          setError(null);
+          setIsGenerating(false);
+          setCanvasState({ mode: CanvasMode.None });
+        }}
         canRedo={canRedo}
         canUndo={canUndo}
         undo={history.undo}
         redo={history.redo}
       />
       <SelectionTools camera={camera} setLastUsedColor={setLastUsedColor} />
+      <SelectionTool
+        camera={camera}
+        isActive={isAiSelectionActive}
+        selectionBounds={selectionBounds}
+        isPromptOpen={isPromptOpen}
+        promptValue={aiPrompt}
+        onPromptChange={setAiPrompt}
+        onSubmit={handleGenerateAiImage}
+        disabled={isGenerating}
+        error={aiError}
+        onCancel={() => {
+          resetAiSelection();
+          setIsPromptOpen(false);
+          setCanvasState({ mode: CanvasMode.None });
+        }}
+      />
 
       <svg
         className="h-[100vh] w-[100vw]"

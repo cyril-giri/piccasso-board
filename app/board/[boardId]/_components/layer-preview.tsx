@@ -10,6 +10,7 @@ import { Ellipse } from "./eliipse";
 import { Note } from "./note";
 import { Rectangle } from "./rectangle";
 import { Text } from "./text";
+import { BoardImage } from "./image";
 import { Path } from "./path";
 
 type LayerPreviewProps = {
@@ -71,6 +72,15 @@ export const LayerPreview = memo(
             onPointerDown={onLayerPointerDown}
             selectionColor={selectionColor}
             layer={layer}
+          />
+        );
+      case LayerType.Image:
+        return (
+          <BoardImage
+            id={id}
+            layer={layer}
+            onPointerDown={onLayerPointerDown}
+            selectionColor={selectionColor}
           />
         );
       default:
