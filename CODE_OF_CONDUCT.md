@@ -1,4 +1,4 @@
-# Code of Conduct - Miro Clone
+# Code of Conduct - Picasso Board
 
 ## Our Pledge
 

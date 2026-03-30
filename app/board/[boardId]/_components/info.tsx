@@ -40,7 +40,7 @@ export const Info = ({ boardId }: InfoProps) => {
           <Link href="/">
             <Image
               src="/logo.svg"
-              alt="Miro Clone Logo"
+              alt="Picasso Board Logo"
               height={40}
               width={40}
             />
@@ -50,7 +50,7 @@ export const Info = ({ boardId }: InfoProps) => {
                 font.className,
               )}
             >
-              Miro
+              Picasso Board
             </span>
           </Link>
         </Button>

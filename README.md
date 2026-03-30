@@ -1,8 +1,8 @@
 <a name="readme-top"></a>
 
-# Miro Clone - Real-time collaboration, versatile canvas, rich media, secure.
+# Picasso Board - Real-time collaboration, versatile canvas, rich media, secure.
 
-![Miro Clone - Real-time collaboration, versatile canvas, rich media, secure.](/.github/images/img_main.png "Miro Clone - Real-time collaboration, versatile canvas, rich media, secure.")
+![Picasso Board - Real-time collaboration, versatile canvas, rich media, secure.](/.github/images/img_main.png "Picasso Board - Real-time collaboration, versatile canvas, rich media, secure.")
 
 [![Ask Me Anything!](https://flat.badgen.net/static/Ask%20me/anything?icon=github&color=black&scale=1.01)](https://github.com/sanidhyy "Ask Me Anything!")
 [![GitHub license](https://flat.badgen.net/github/license/sanidhyy/miro-clone?icon=github&color=black&scale=1.01)](https://github.com/sanidhyy/miro-clone/blob/main/LICENSE "GitHub license")
@@ -257,7 +257,7 @@ LIVEBLOCKS_SECRET_KEY=sk_dev_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 ## :wrench: Stats
 
-[![Stats for Miro Clone](/.github/images/stats.svg "Stats for Miro Clone")](https://pagespeed.web.dev/analysis?url=https://clone-miro.vercel.app/ "Stats for Miro Clone")
+[![Stats for Picasso Board](/.github/images/stats.svg "Stats for Picasso Board")](https://pagespeed.web.dev/analysis?url=https://clone-miro.vercel.app/ "Stats for Picasso Board")
 
 ## :raised_hands: Contribute
 
@@ -265,7 +265,7 @@ You might encounter some bugs while using this app. You are more than welcome to
 
 ## :gem: Acknowledgements
 
-Useful resources and dependencies that are used in Miro Clone.
+Useful resources and dependencies that are used in Picasso Board.
 
 - Thanks to CodeWithAntonio: https://codewithantonio.com/
 - [@clerk/nextjs](https://www.npmjs.com/package/@clerk/nextjs): ^4.29.7

@@ -1,5 +1,5 @@
 <!-- omit in toc -->
-# Contributing to Miro Clone
+# Contributing to Picasso Board
 
 First off, thanks for taking the time to contribute! ❤️
 
@@ -29,7 +29,7 @@ All types of contributions are encouraged and valued. See the [Table of Contents
 ## Code of Conduct
 
 This project and everyone participating in it is governed by the
-[Miro Clone Code of Conduct](https://github.com/sanidhyy/miro-cloneblob/master/CODE_OF_CONDUCT.md).
+[Picasso Board Code of Conduct](https://github.com/sanidhyy/miro-cloneblob/master/CODE_OF_CONDUCT.md).
 By participating, you are expected to uphold this code. Please report unacceptable behavior
 to .
 
@@ -91,7 +91,7 @@ Once it's filed:
 
 ### Suggesting Enhancements
 
-This section guides you through submitting an enhancement suggestion for Miro Clone, **including completely new features and minor improvements to existing functionality**. Following these guidelines will help maintainers and the community to understand your suggestion and find related suggestions.
+This section guides you through submitting an enhancement suggestion for Picasso Board, **including completely new features and minor improvements to existing functionality**. Following these guidelines will help maintainers and the community to understand your suggestion and find related suggestions.
 
 <!-- omit in toc -->
 #### Before Submitting an Enhancement
@@ -110,7 +110,7 @@ Enhancement suggestions are tracked as [GitHub issues](https://github.com/sanidh
 - Provide a **step-by-step description of the suggested enhancement** in as many details as possible.
 - **Describe the current behavior** and **explain which behavior you expected to see instead** and why. At this point you can also tell which alternatives do not work for you.
 - You may want to **include screenshots and animated GIFs** which help you demonstrate the steps or point out the part which the suggestion is related to. You can use [this tool](https://www.cockos.com/licecap/) to record GIFs on macOS and Windows, and [this tool](https://github.com/colinkeenan/silentcast) or [this tool](https://github.com/GNOME/byzanz) on Linux. <!-- this should only be included if the project has a GUI -->
-- **Explain why this enhancement would be useful** to most Miro Clone users. You may also want to point out the other projects that solved it better and which could serve as inspiration.
+- **Explain why this enhancement would be useful** to most Picasso Board users. You may also want to point out the other projects that solved it better and which could serve as inspiration.
 
 <!-- omit in toc -->
 ## Attribution
