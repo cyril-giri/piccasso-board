@@ -88,10 +88,32 @@ export class ReplicateProvider implements AIImageProvider {
     });
   }
 
-  async generateImage(input: { prompt: string; imageBase64: string }) {
-    const normalizedImage = input.imageBase64.startsWith("data:image/")
-      ? input.imageBase64
-      : `data:image/png;base64,${input.imageBase64}`;
+  async generateImage(input: {
+    prompt: string;
+    imageBase64?: string;
+    imageUrl?: string;
+    width?: number;
+    height?: number;
+    strength?: number;
+    seed?: number;
+    steps?: number;
+    styleImages?: Array<{ url?: string; strength: number }>;
+    imageStyleRefs?: Array<Record<string, unknown>>;
+    guidance_scale_flux?: number;
+    relaxedModeAccess?: boolean;
+    styles?: Array<Record<string, unknown>>;
+  }) {
+    const normalizedImage = input.imageUrl
+      ? input.imageUrl
+      : input.imageBase64
+      ? input.imageBase64.startsWith("data:image/")
+        ? input.imageBase64
+        : `data:image/png;base64,${input.imageBase64}`
+      : "";
+
+    if (!normalizedImage) {
+      throw new Error("Replicate image generation requires either imageUrl or imageBase64.");
+    }
 
     let output: unknown;
 

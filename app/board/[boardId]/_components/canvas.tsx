@@ -126,7 +126,7 @@ const buildSelectionSvg = (selectedLayers: Layer[], selectionBounds: XYWH) => {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${selectionBounds.width}" height="${selectionBounds.height}" viewBox="0 0 ${selectionBounds.width} ${selectionBounds.height}">
-  <rect width="100%" height="100%" fill="transparent" />
+  <rect width="100%" height="100%" fill="#ffffff" />
   ${content}
 </svg>`;
 };
@@ -167,6 +167,8 @@ const exportSelectionToPng = async (
     throw new Error("Canvas is not supported in this environment.");
   }
 
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
   URL.revokeObjectURL(url);
 
@@ -697,6 +699,8 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         body: JSON.stringify({
           prompt,
           imageBase64,
+          width: bounds.width,
+          height: bounds.height,
         }),
       });
 
