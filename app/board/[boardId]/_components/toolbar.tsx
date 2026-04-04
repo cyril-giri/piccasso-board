@@ -1,5 +1,7 @@
 import {
   Circle,
+  Droplet,
+  Eraser,
   ImagePlus,
   MousePointer2,
   Pencil,
@@ -128,6 +130,28 @@ export const Toolbar = ({
             })
           }
           isActive={canvasState.mode === CanvasMode.Pencil}
+        />
+
+        <ToolButton
+          label="Fill"
+          icon={Droplet}
+          onClick={() =>
+            setCanvasState({
+              mode: CanvasMode.Fill,
+            })
+          }
+          isActive={canvasState.mode === CanvasMode.Fill}
+        />
+
+        <ToolButton
+          label="Eraser"
+          icon={Eraser}
+          onClick={() =>
+            setCanvasState({
+              mode: CanvasMode.Eraser,
+            })
+          }
+          isActive={canvasState.mode === CanvasMode.Eraser}
         />
       </div>
 

@@ -2,7 +2,7 @@
 
 import { LiveObject } from "@liveblocks/client";
 import { nanoid } from "nanoid";
-import React, { useCallback, useMemo, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import getStroke from "perfect-freehand";
 
 import { useDisableScrollBounce } from "@/hooks/use-disable-scroll-bounce";
@@ -13,10 +13,12 @@ import {
   colorToCSS,
   connectionIdToColor,
   findIntersectingLayersWithRectangle,
+  getElementAtPosition,
   getSvgPathFromStroke,
   penPointsToPathLayer,
   pointerEventToCanvasPoint,
   resizeBounds,
+  splitPathByEraserRadius,
 } from "@/lib/utils";
 import {
   useCanRedo,
@@ -46,6 +48,7 @@ import { Participants } from "./participants";
 import { Path } from "./path";
 import { SelectionBox } from "./selection-box";
 import { SelectionTools } from "./selection-tools";
+import { ColorPicker } from "./color-picker";
 import { SelectionTool } from "@/components/canvas/selection-tool";
 import { Toolbar } from "./toolbar";
 
@@ -183,6 +186,7 @@ export const Canvas = ({ boardId }: CanvasProps) => {
   const layerIds = useStorage((root) => root.layerIds);
 
   const pencilDraft = useSelf((me) => me.presence.pencilDraft);
+  const penColor = useSelf((me) => me.presence.penColor);
   const selectedLayerIds = useSelf((me) => me.presence.selection);
   const [canvasState, setCanvasState] = useState<CanvasState>({
     mode: CanvasMode.None,
@@ -193,6 +197,13 @@ export const Canvas = ({ boardId }: CanvasProps) => {
     g: 0,
     b: 0,
   });
+  const [strokeColor, setStrokeColor] = useState<string>("#000000");
+  const [showColorPanel, setShowColorPanel] = useState<boolean>(false);
+  const [showEraserPanel, setShowEraserPanel] = useState<boolean>(false);
+  const [activeTool, setActiveTool] = useState<"none" | "pen" | "fill" | "eraser">("none");
+  const [eraserCursor, setEraserCursor] = useState<Point | null>(null);
+  const [eraserSize, setEraserSize] = useState<number>(16);
+  const eraserThrottle = useRef<number>(0);
 
   const aiPrompt = useSelectionState((state) => state.aiPrompt);
   const isAiSelectionActive = useSelectionState(
@@ -224,6 +235,54 @@ export const Canvas = ({ boardId }: CanvasProps) => {
   const history = useHistory();
   const canUndo = useCanUndo();
   const canRedo = useCanRedo();
+
+  const handleCanvasStateChange = useCallback(
+    (newState: CanvasState) => {
+      const sameMode = canvasState.mode === newState.mode;
+
+      if (newState.mode === CanvasMode.Pencil) {
+        setShowColorPanel(!sameMode ? true : !showColorPanel);
+        setShowEraserPanel(false);
+        setActiveTool("pen");
+      } else if (newState.mode === CanvasMode.Fill) {
+        setShowColorPanel(!sameMode ? true : !showColorPanel);
+        setShowEraserPanel(false);
+        setActiveTool("fill");
+      } else if (newState.mode === CanvasMode.Eraser) {
+        setShowEraserPanel(!sameMode ? true : !showEraserPanel);
+        setShowColorPanel(false);
+        setActiveTool("eraser");
+      } else {
+        setShowColorPanel(false);
+        setShowEraserPanel(false);
+        setActiveTool("none");
+      }
+
+      setCanvasState(newState);
+    },
+    [canvasState.mode, showColorPanel, showEraserPanel],
+  );
+
+  const handleColorChange = useCallback((color: Color) => {
+    setLastUsedColor(color);
+    setStrokeColor(colorToCSS(color));
+  }, []);
+
+  const fillAtPoint = useMutation(
+    ({ storage }, point: Point, fill: Color) => {
+      const liveLayers = storage.get("layers");
+      const layers = liveLayers.toImmutable();
+      const elementId = getElementAtPosition(layerIds, layers, point);
+
+      if (!elementId) return;
+
+      const layer = liveLayers.get(elementId) as any;
+      if (!layer || layer.get("type") === LayerType.Image) return;
+
+      layer.set("fill", fill);
+    },
+    [layerIds],
+  );
 
   const insertLayer = useMutation(
     (
@@ -388,27 +447,29 @@ export const Canvas = ({ boardId }: CanvasProps) => {
   const insertPath = useMutation(
     ({ storage, self, setMyPresence }) => {
       const liveLayers = storage.get("layers");
-      const { pencilDraft } = self.presence;
+      const { pencilDraft, penColor } = self.presence;
 
       if (
         pencilDraft == null ||
         pencilDraft.length < 2 ||
         liveLayers.size >= MAX_LAYERS
       ) {
-        setMyPresence({ pencilDraft: null });
+        setMyPresence({ pencilDraft: null, penColor: null });
         return;
       }
 
       const id = nanoid();
+      const strokeColor = penColor ?? lastUsedColor;
+
       liveLayers.set(
         id,
-        new LiveObject(penPointsToPathLayer(pencilDraft, lastUsedColor)),
+        new LiveObject(penPointsToPathLayer(pencilDraft, strokeColor)),
       );
 
       const liveLayerIds = storage.get("layerIds");
       liveLayerIds.push(id);
 
-      setMyPresence({ pencilDraft: null });
+      setMyPresence({ pencilDraft: null, penColor: null });
       setCanvasState({ mode: CanvasMode.Pencil });
     },
     [lastUsedColor],
@@ -440,6 +501,119 @@ export const Canvas = ({ boardId }: CanvasProps) => {
 
       liveLayerIds.push(layerId);
       setMyPresence({ selection: [layerId] }, { addToHistory: true });
+    },
+    [],
+  );
+
+  const fillLayer = useMutation(
+    ({ storage }, layerId: string, fill: Color) => {
+      const liveLayers = storage.get("layers");
+      const layer = liveLayers.get(layerId) as any;
+
+      if (!layer) return;
+      if (layer.get("type") === LayerType.Image) return;
+
+      layer.set("fill", fill);
+    },
+    [],
+  );
+
+  const eraseAtPoint = useMutation(
+    ({ storage, self, setMyPresence }, point: Point, radius: number) => {
+      const liveLayers = storage.get("layers");
+      const liveLayerIds = storage.get("layerIds");
+      const ids = liveLayerIds.toImmutable();
+
+      for (const id of ids) {
+        const layer = liveLayers.get(id) as any;
+
+        if (!layer || layer.get("type") !== LayerType.Path) continue;
+
+        const x = layer.get("x") as number;
+        const y = layer.get("y") as number;
+        const width = layer.get("width") as number;
+        const height = layer.get("height") as number;
+        const fill = layer.get("fill") as Color;
+        const points = layer.get("points") as number[][];
+
+        if (
+          point.x + radius < x ||
+          point.x - radius > x + width ||
+          point.y + radius < y ||
+          point.y - radius > y + height
+        ) {
+          continue;
+        }
+
+        const segments = splitPathByEraserRadius(
+          points,
+          x,
+          y,
+          point.x,
+          point.y,
+          radius,
+        );
+
+        if (segments.length === 0) {
+          liveLayers.delete(id);
+
+          const index = liveLayerIds.indexOf(id);
+          if (index !== -1) {
+            liveLayerIds.delete(index);
+          }
+
+          if (self.presence.selection.includes(id)) {
+            setMyPresence(
+              {
+                selection: self.presence.selection.filter(
+                  (selectedId) => selectedId !== id,
+                ),
+              },
+              { addToHistory: true },
+            );
+          }
+
+          continue;
+        }
+
+        if (segments.length === 1) {
+          layer.update(penPointsToPathLayer(segments[0], fill));
+          continue;
+        }
+
+        layer.update(penPointsToPathLayer(segments[0], fill));
+
+        const originalIndex = liveLayerIds.indexOf(id);
+        if (originalIndex === -1) continue;
+
+        const newIds: string[] = [];
+
+        for (
+          let segmentIndex = 1;
+          segmentIndex < segments.length;
+          segmentIndex += 1
+        ) {
+          const newId = nanoid();
+          liveLayers.set(
+            newId,
+            new LiveObject(
+              penPointsToPathLayer(segments[segmentIndex], fill),
+            ),
+          );
+          liveLayerIds.push(newId);
+          newIds.push(newId);
+        }
+
+        let destination = originalIndex + 1;
+
+        for (const newId of newIds) {
+          const currentIndex = liveLayerIds.indexOf(newId);
+          if (currentIndex !== -1) {
+            liveLayerIds.move(currentIndex, destination);
+            destination += 1;
+          }
+        }
+      }
     },
     [],
   );
@@ -512,6 +686,17 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         resizeSelectedLayer(current);
       } else if (canvasState.mode === CanvasMode.Pencil) {
         continueDrawing(current, e);
+      } else if (canvasState.mode === CanvasMode.Eraser) {
+        setEraserCursor(current);
+
+        const now = performance.now();
+
+        if (e.buttons === 1 && now - eraserThrottle.current > 16) {
+          eraseAtPoint(current, eraserSize);
+          eraserThrottle.current = now;
+        }
+      } else if (eraserCursor != null) {
+        setEraserCursor(null);
       }
 
       setMyPresence({ cursor: current });
@@ -524,6 +709,8 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       resizeSelectedLayer,
       camera,
       translateSelectedLayers,
+      eraseAtPoint,
+      eraserSize,
     ],
   );
 
@@ -531,6 +718,7 @@ export const Canvas = ({ boardId }: CanvasProps) => {
     setMyPresence({
       cursor: null,
     });
+    setEraserCursor(null);
   }, []);
 
   const onPointerDown = useCallback(
@@ -541,6 +729,17 @@ export const Canvas = ({ boardId }: CanvasProps) => {
 
       if (canvasState.mode === CanvasMode.Pencil) {
         startDrawing(point, e.pressure);
+        return;
+      }
+
+      if (canvasState.mode === CanvasMode.Eraser) {
+        eraseAtPoint(point, eraserSize);
+        setEraserCursor(point);
+        return;
+      }
+
+      if (canvasState.mode === CanvasMode.Fill) {
+        fillAtPoint(point, lastUsedColor);
         return;
       }
 
@@ -588,6 +787,11 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         insertPath();
       } else if (canvasState.mode === CanvasMode.Inserting) {
         insertLayer(canvasState.layerType, point);
+      } else if (
+        canvasState.mode === CanvasMode.Fill ||
+        canvasState.mode === CanvasMode.Eraser
+      ) {
+        // Keep current tool active after using fill or eraser.
       } else {
         setCanvasState({
           mode: CanvasMode.None,
@@ -617,6 +821,19 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       )
         return;
 
+      if (canvasState.mode === CanvasMode.Fill) {
+        e.stopPropagation();
+        fillLayer(layerId, lastUsedColor);
+        return;
+      }
+
+      if (canvasState.mode === CanvasMode.Eraser) {
+        e.stopPropagation();
+        const point = pointerEventToCanvasPoint(e, camera);
+        eraseAtPoint(point, eraserSize);
+        return;
+      }
+
       history.pause();
       e.stopPropagation();
 
@@ -628,7 +845,16 @@ export const Canvas = ({ boardId }: CanvasProps) => {
 
       setCanvasState({ mode: CanvasMode.Translating, current: point });
     },
-    [setCanvasState, camera, history, canvasState.mode],
+    [
+      setCanvasState,
+      camera,
+      history,
+      canvasState.mode,
+      lastUsedColor,
+      eraserSize,
+      fillLayer,
+      eraseAtPoint,
+    ],
   );
 
   const layerIdsToColorSelection = useMemo(() => {
@@ -645,6 +871,7 @@ export const Canvas = ({ boardId }: CanvasProps) => {
     return layerIdsToColorSelection;
   }, [selections]);
 
+  const currentPenColor = penColor ?? lastUsedColor;
   const deleteLayers = useDeleteLayers();
 
   useEffect(() => {
@@ -746,7 +973,7 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       <Participants />
       <Toolbar
         canvasState={canvasState}
-        setCanvasState={setCanvasState}
+        setCanvasState={handleCanvasStateChange}
         onAiSelection={() => {
           resetAiSelection();
           setIsAiSelectionActive(true);
@@ -762,6 +989,37 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         undo={history.undo}
         redo={history.redo}
       />
+      {(showColorPanel || showEraserPanel) && (
+        <div className="absolute left-[68px] top-[50%] z-10 -translate-y-[50%]">
+          {showColorPanel && (
+            <div className="rounded-md border border-neutral-200 bg-white p-3 shadow-md">
+              <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                {activeTool === "fill" ? "Fill color" : "Pen color"}
+              </div>
+              <ColorPicker
+                selectedColor={lastUsedColor}
+                onChange={handleColorChange}
+              />
+            </div>
+          )}
+          {showEraserPanel && (
+            <div className="rounded-md border border-neutral-200 bg-white p-3 shadow-md w-[220px]">
+              <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                Eraser size
+              </div>
+              <input
+                type="range"
+                min={10}
+                max={32}
+                value={eraserSize}
+                onChange={(event) => setEraserSize(Number(event.target.value))}
+                className="w-full"
+              />
+              <div className="mt-2 text-sm text-slate-600">{eraserSize}px</div>
+            </div>
+          )}
+        </div>
+      )}
       <SelectionTools camera={camera} setLastUsedColor={setLastUsedColor} />
       <SelectionTool
         camera={camera}
@@ -817,7 +1075,7 @@ export const Canvas = ({ boardId }: CanvasProps) => {
           {pencilDraft != null && pencilDraft.length > 0 && (
             <Path
               points={pencilDraft}
-              fill={colorToCSS(lastUsedColor)}
+              fill={colorToCSS(currentPenColor)}
               x={0}
               y={0}
             />
