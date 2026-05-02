@@ -230,7 +230,7 @@ export class KreaProvider implements AIImageProvider {
     }
 
     const requestBody: Record<string, unknown> = {
-      prompt: "referring to the object in the image " + input.prompt,
+      prompt: "referring to the object in the image be creative with it generate the object  " + input.prompt,
       width: normalizedDimensions.width,
       height: normalizedDimensions.height,
       ...KREA_DEFAULT_OPTIONS,
