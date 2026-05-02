@@ -66,7 +66,8 @@ export const SelectionTools = memo(
         setLastUsedColor(fill);
 
         selection.forEach((id) => {
-          liveLayers.get(id)?.set("fill", fill);
+          const layer = liveLayers.get(id) as any;
+          layer?.set("fill", fill);
         });
       },
       [selection, setLastUsedColor],

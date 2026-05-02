@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const siteConfig: Metadata = {
-  title: "Miro Clone",
+  title: "Picasso Board",
   description:
-    "Revolutionary Miro clone: Real-time collaboration, versatile canvas, rich media, secure.",
+    "Revolutionary Picasso Board: Real-time collaboration, versatile canvas, rich media, secure.",
   keywords: [
     "reactjs",
     "nextjs",

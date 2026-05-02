@@ -1,5 +1,5 @@
 {
-  "name": "miro-clone",
+  "name": "picasso-board",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@clerk/nextjs": "^4.31.5",
+    "@clerk/nextjs": "4.29.7",
     "@liveblocks/client": "^1.10.1",
     "@liveblocks/node": "^1.10.1",
     "@liveblocks/react": "^1.10.1",
@@ -26,13 +26,14 @@
     "date-fns": "^3.3.1",
     "lucide-react": "^0.323.0",
     "nanoid": "^5.0.6",
-    "next": "15.5.10",
+    "next": "14.1.0",
     "next-themes": "^0.2.1",
     "perfect-freehand": "^1.2.2",
     "query-string": "^8.2.0",
-    "react": "^18",
+    "react": "18.2.0",
     "react-contenteditable": "^3.3.7",
-    "react-dom": "^18",
+    "react-dom": "18.2.0",
+    "replicate": "^1.4.0",
     "sonner": "^1.4.0",
     "tailwind-merge": "^2.2.1",
     "tailwindcss-animate": "^1.0.7",

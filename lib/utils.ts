@@ -104,6 +104,60 @@ export function findIntersectingLayersWithRectangle(
   return ids;
 }
 
+export function getElementAtPosition(
+  layerIds: readonly string[],
+  layers: ReadonlyMap<string, Layer>,
+  point: Point,
+) {
+  for (let index = layerIds.length - 1; index >= 0; index -= 1) {
+    const layer = layers.get(layerIds[index]);
+
+    if (!layer) continue;
+
+    if (isPointInsideLayer(point, layer)) {
+      return layerIds[index];
+    }
+  }
+
+  return null;
+}
+
+function isPointInsideLayer(point: Point, layer: Layer) {
+  const px = point.x;
+  const py = point.y;
+
+  switch (layer.type) {
+    case LayerType.Rectangle:
+    case LayerType.Text:
+    case LayerType.Note:
+    case LayerType.Image:
+      return (
+        px >= layer.x &&
+        px <= layer.x + layer.width &&
+        py >= layer.y &&
+        py <= layer.y + layer.height
+      );
+    case LayerType.Ellipse: {
+      const rx = layer.width / 2;
+      const ry = layer.height / 2;
+      const cx = layer.x + rx;
+      const cy = layer.y + ry;
+      const dx = px - cx;
+      const dy = py - cy;
+      return dx * dx / (rx * rx) + dy * dy / (ry * ry) <= 1;
+    }
+    case LayerType.Path:
+      return (
+        px >= layer.x &&
+        px <= layer.x + layer.width &&
+        py >= layer.y &&
+        py <= layer.y + layer.height
+      );
+    default:
+      return false;
+  }
+}
+
 export function getContrastingTextColor(color: Color) {
   const luminance = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
 
@@ -140,6 +194,109 @@ export function penPointsToPathLayer(
     fill: color,
     points: points.map(([x, y, pressure]) => [x - left, y - top, pressure]),
   };
+}
+
+export function getDistancePointToSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSq = dx * dx + dy * dy;
+
+  if (lengthSq === 0) {
+    const pxDx = px - x1;
+    const pyDy = py - y1;
+    return Math.sqrt(pxDx * pxDx + pyDy * pyDy);
+  }
+
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSq));
+  const projectionX = x1 + t * dx;
+  const projectionY = y1 + t * dy;
+  const distX = px - projectionX;
+  const distY = py - projectionY;
+
+  return Math.sqrt(distX * distX + distY * distY);
+}
+
+export function isPointNearLine(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  radius: number,
+) {
+  return getDistancePointToSegment(px, py, x1, y1, x2, y2) <= radius;
+}
+
+export function splitPathByEraserRadius(
+  points: number[][],
+  layerX: number,
+  layerY: number,
+  eraserX: number,
+  eraserY: number,
+  radius: number,
+) {
+  if (points.length < 2) return [];
+
+  const radiusSq = radius * radius;
+  const keepSegments: number[][][] = [];
+  let currentSegment: number[][] = [];
+
+  const pointIsErased = points.map((point, index) => {
+    const [x, y] = point;
+    const absoluteX = x + layerX;
+    const absoluteY = y + layerY;
+    const dx = absoluteX - eraserX;
+    const dy = absoluteY - eraserY;
+    const isWithinPoint = dx * dx + dy * dy <= radiusSq;
+
+    if (isWithinPoint) return true;
+
+    const next = points[index + 1];
+
+    if (next) {
+      const [nx, ny] = next;
+      if (
+        isPointNearLine(
+          eraserX,
+          eraserY,
+          absoluteX,
+          absoluteY,
+          nx + layerX,
+          ny + layerY,
+          radius,
+        )
+      )
+        return true;
+    }
+
+    return false;
+  });
+
+  for (let index = 0; index < points.length; index++) {
+    if (pointIsErased[index]) {
+      if (currentSegment.length > 1) {
+        keepSegments.push(currentSegment);
+      }
+      currentSegment = [];
+      continue;
+    }
+
+    currentSegment.push(points[index]);
+  }
+
+  if (currentSegment.length > 1) {
+    keepSegments.push(currentSegment);
+  }
+
+  return keepSegments;
 }
 
 export function getSvgPathFromStroke(stroke: number[][]) {
