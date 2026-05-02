@@ -200,10 +200,12 @@ export const Canvas = ({ boardId }: CanvasProps) => {
   const [strokeColor, setStrokeColor] = useState<string>("#000000");
   const [showColorPanel, setShowColorPanel] = useState<boolean>(false);
   const [showEraserPanel, setShowEraserPanel] = useState<boolean>(false);
-  const [activeTool, setActiveTool] = useState<"none" | "pen" | "fill" | "eraser">("none");
+  const [activeTool, setActiveTool] = useState<"none" | "pen" | "fill" | "eraser" | "hand">("none");
   const [eraserCursor, setEraserCursor] = useState<Point | null>(null);
   const [eraserSize, setEraserSize] = useState<number>(16);
   const eraserThrottle = useRef<number>(0);
+  const panStart = useRef<{ x: number; y: number; cameraX: number; cameraY: number } | null>(null);
+  const previousToolRef = useRef<"none" | "pen" | "fill" | "eraser" | "hand">("none");
 
   const aiPrompt = useSelectionState((state) => state.aiPrompt);
   const isAiSelectionActive = useSelectionState(
@@ -252,6 +254,10 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         setShowEraserPanel(!sameMode ? true : !showEraserPanel);
         setShowColorPanel(false);
         setActiveTool("eraser");
+      } else if (newState.mode === CanvasMode.Hand) {
+        setShowColorPanel(false);
+        setShowEraserPanel(false);
+        setActiveTool("hand");
       } else {
         setShowColorPanel(false);
         setShowEraserPanel(false);
@@ -686,6 +692,15 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         resizeSelectedLayer(current);
       } else if (canvasState.mode === CanvasMode.Pencil) {
         continueDrawing(current, e);
+      } else if (canvasState.mode === CanvasMode.Hand) {
+        if (panStart.current && e.buttons === 1) {
+          const deltaX = e.clientX - panStart.current.x;
+          const deltaY = e.clientY - panStart.current.y;
+          setCamera({
+            x: panStart.current.cameraX + deltaX,
+            y: panStart.current.cameraY + deltaY,
+          });
+        }
       } else if (canvasState.mode === CanvasMode.Eraser) {
         setEraserCursor(current);
 
@@ -743,6 +758,16 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         return;
       }
 
+      if (canvasState.mode === CanvasMode.Hand) {
+        panStart.current = {
+          x: e.clientX,
+          y: e.clientY,
+          cameraX: camera.x,
+          cameraY: camera.y,
+        };
+        return;
+      }
+
       if (isAiSelectionActive) {
         setCanvasState({
           mode: CanvasMode.AISelectionPressing,
@@ -789,9 +814,10 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         insertLayer(canvasState.layerType, point);
       } else if (
         canvasState.mode === CanvasMode.Fill ||
-        canvasState.mode === CanvasMode.Eraser
+        canvasState.mode === CanvasMode.Eraser ||
+        canvasState.mode === CanvasMode.Hand
       ) {
-        // Keep current tool active after using fill or eraser.
+        // Keep current tool active after using fill, eraser, or hand.
       } else {
         setCanvasState({
           mode: CanvasMode.None,
@@ -799,6 +825,7 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       }
 
       history.resume();
+      panStart.current = null;
     },
     [
       setCanvasState,
@@ -884,15 +911,43 @@ export const Canvas = ({ boardId }: CanvasProps) => {
 
             break;
           }
+          break;
+        case " ": {
+          e.preventDefault();
+          if (canvasState.mode !== CanvasMode.Hand) {
+            previousToolRef.current = activeTool;
+            handleCanvasStateChange({ mode: CanvasMode.Hand });
+          }
+          break;
+        }
+      }
+    }
+
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (canvasState.mode === CanvasMode.Hand) {
+          const previousMode =
+            previousToolRef.current === "pen"
+              ? CanvasMode.Pencil
+              : previousToolRef.current === "fill"
+                ? CanvasMode.Fill
+                : previousToolRef.current === "eraser"
+                  ? CanvasMode.Eraser
+                  : CanvasMode.None;
+          handleCanvasStateChange({ mode: previousMode });
+        }
       }
     }
 
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onKeyUp);
 
     return () => {
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
     };
-  }, [deleteLayers, history]);
+  }, [deleteLayers, history, canvasState.mode, activeTool, handleCanvasStateChange]);
 
   const handleGenerateAiImage = useCallback(async () => {
     const prompt = aiPrompt.trim();
@@ -1039,7 +1094,13 @@ export const Canvas = ({ boardId }: CanvasProps) => {
       />
 
       <svg
-        className="h-[100vh] w-[100vw]"
+        className={`h-[100vh] w-[100vw] ${
+          canvasState.mode === CanvasMode.Hand
+            ? panStart.current
+              ? "cursor-grabbing"
+              : "cursor-grab"
+            : ""
+        }`}
         onWheel={onWheel}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
